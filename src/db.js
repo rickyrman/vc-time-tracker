@@ -11,16 +11,21 @@ const db = new Database(dbPath);
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
   user_id TEXT PRIMARY KEY,
+  username TEXT,
   total_seconds INTEGER NOT NULL DEFAULT 0,
   active_start_ms INTEGER,
+  last_location TEXT,
   created_at_ms INTEGER NOT NULL,
   updated_at_ms INTEGER NOT NULL
 );
 `);
 
-function nowMs() {
-  return Date.now();
-}
+// Add columns if they don't exist (for existing databases)
+["username TEXT", "last_location TEXT"].forEach(col => {
+  try { db.exec(`ALTER TABLE users ADD COLUMN ${col}`); } catch (e) {}
+});
+
+function nowMs() { return Date.now(); }
 
 function getUser(userId) {
   let row = db.prepare("SELECT * FROM users WHERE user_id = ?").get(userId);
@@ -35,10 +40,14 @@ function getUser(userId) {
   return row;
 }
 
-function setActiveStart(userId, activeStartMs) {
+function setUsername(userId, username) {
+  db.prepare("UPDATE users SET username = ? WHERE user_id = ?").run(username, userId);
+}
+
+function setActiveStart(userId, activeStartMs, location) {
   const t = nowMs();
-  db.prepare("UPDATE users SET active_start_ms = ?, updated_at_ms = ? WHERE user_id = ?")
-    .run(activeStartMs, t, userId);
+  db.prepare("UPDATE users SET active_start_ms = ?, last_location = ?, updated_at_ms = ? WHERE user_id = ?")
+    .run(activeStartMs, location || null, t, userId);
 }
 
 function addSeconds(userId, seconds) {
@@ -53,9 +62,21 @@ function clearActive(userId) {
     .run(t, userId);
 }
 
+function getLeaderboard(limit = 10) {
+  return db.prepare(`
+    SELECT user_id, username, total_seconds
+    FROM users
+    WHERE total_seconds > 0
+    ORDER BY total_seconds DESC
+    LIMIT ?
+  `).all(limit);
+}
+
 module.exports = {
   getUser,
+  setUsername,
   setActiveStart,
   addSeconds,
-  clearActive
+  clearActive,
+  getLeaderboard
 };

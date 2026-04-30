@@ -3,10 +3,11 @@ const { ApplicationCommandOptionType } = require("discord-api-types/v10");
 const USER_INSTALL = 1;
 const BOT_DM = 1;
 const PRIVATE_CHANNEL = 2;
+const GUILD = 0;
 
 const commandBase = {
   integration_types: [USER_INSTALL],
-  contexts: [BOT_DM, PRIVATE_CHANNEL]
+  contexts: [BOT_DM, PRIVATE_CHANNEL, GUILD]
 };
 
 const timeOptions = [
@@ -49,6 +50,11 @@ const commands = [
     ...commandBase,
     name: "vctime",
     description: "See your saved VC time and current session"
+  },
+  {
+    ...commandBase,
+    name: "leaderboard",
+    description: "See who has the most VC time"
   }
 ];
 

@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const { verifyKeyMiddleware, InteractionType, InteractionResponseType } = require("discord-interactions");
-const { getUser, setActiveStart, addSeconds, clearActive } = require("./db");
+const { getUser, setUsername, setActiveStart, addSeconds, clearActive, getLeaderboard } = require("./db");
 const { secondsFromOptions, formatDuration } = require("./time");
 
 const app = express();
@@ -16,15 +16,32 @@ if (!publicKey) {
 function reply(content) {
   return {
     type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-    data: {
-      content,
-      flags: 64
-    }
+    data: { content }
   };
 }
 
 function getActorId(interaction) {
   return interaction.user?.id || interaction.member?.user?.id;
+}
+
+function getActorName(interaction) {
+  return interaction.user?.username || interaction.member?.user?.username || "Unknown";
+}
+
+function getLocation(interaction) {
+  // context: 0 = guild, 1 = bot DM, 2 = private/group DM
+  const context = interaction.context;
+  const channelName = interaction.channel?.name;
+  const channelType = interaction.channel?.type;
+
+  // Channel types: 1 = DM, 3 = Group DM, 0/2/4/etc = server channels
+  if (channelType === 1) return "DM";
+  if (channelType === 3) {
+    return channelName ? `Group DM: ${channelName}` : "Group DM";
+  }
+  if (context === 0 && channelName) return `Server: #${channelName}`;
+  if (context === 0) return "Server";
+  return "DM";
 }
 
 app.get("/", (_req, res) => {
@@ -43,6 +60,7 @@ app.post("/interactions", verifyKeyMiddleware(publicKey), async (req, res) => {
   }
 
   const userId = getActorId(interaction);
+  const username = getActorName(interaction);
   const command = interaction.data.name;
 
   if (!userId) {
@@ -50,6 +68,7 @@ app.post("/interactions", verifyKeyMiddleware(publicKey), async (req, res) => {
   }
 
   const user = getUser(userId);
+  setUsername(userId, username);
   const now = Date.now();
 
   try {
@@ -61,13 +80,14 @@ app.post("/interactions", verifyKeyMiddleware(publicKey), async (req, res) => {
 
       const backdateSeconds = secondsFromOptions(interaction);
       const startMs = now - backdateSeconds * 1000;
-      setActiveStart(userId, startMs);
+      const location = getLocation(interaction);
+      setActiveStart(userId, startMs, location);
 
       if (backdateSeconds > 0) {
-        return res.send(reply(`Checked in. I counted you as starting **${formatDuration(backdateSeconds)}** ago.`));
+        return res.send(reply(`Checked in from **${location}**. I counted you as starting **${formatDuration(backdateSeconds)}** ago.`));
       }
 
-      return res.send(reply("Checked in. Timer started."));
+      return res.send(reply(`Checked in from **${location}**. Timer started.`));
     }
 
     if (command === "checkout") {
@@ -108,7 +128,28 @@ app.post("/interactions", verifyKeyMiddleware(publicKey), async (req, res) => {
         message += "\nNo active session right now.";
       }
 
+      if (updated.last_location) {
+        message += `\nLast checked in from: **${updated.last_location}**.`;
+      }
+
       return res.send(reply(message));
+    }
+
+    if (command === "leaderboard") {
+      const rows = getLeaderboard(10);
+
+      if (rows.length === 0) {
+        return res.send(reply("No one has any VC time yet. Use `/checkin` to start tracking!"));
+      }
+
+      const medals = ["🥇", "🥈", "🥉"];
+      const lines = rows.map((row, i) => {
+        const medal = medals[i] || `**${i + 1}.**`;
+        const name = row.username || `User ${row.user_id}`;
+        return `${medal} **${name}** — ${formatDuration(row.total_seconds)}`;
+      });
+
+      return res.send(reply(`🏆 **VC Time Leaderboard**\n\n${lines.join("\n")}`));
     }
 
     return res.send(reply("Unknown command."));
@@ -119,7 +160,6 @@ app.post("/interactions", verifyKeyMiddleware(publicKey), async (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-// Bind to 0.0.0.0 explicitly — required for Railway to route traffic to the container
 app.listen(port, "0.0.0.0", () => {
   console.log(`VC Time Tracker listening on port ${port}`);
 });

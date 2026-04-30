@@ -11,18 +11,13 @@ function secondsFromOptions(interaction) {
 
 function formatDuration(seconds) {
   seconds = Math.max(0, Math.floor(seconds));
-  const days = Math.floor(seconds / 86400);
-  seconds %= 86400;
-  const hours = Math.floor(seconds / 3600);
-  seconds %= 3600;
-  const minutes = Math.floor(seconds / 60);
+  const totalHours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
 
-  const parts = [];
-  if (days) parts.push(`${days}d`);
-  if (hours) parts.push(`${hours}h`);
-  if (minutes) parts.push(`${minutes}m`);
-  if (!parts.length) parts.push("0m");
-  return parts.join(" ");
+  if (totalHours === 0 && minutes === 0) return "0m";
+  if (totalHours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${totalHours}h`;
+  return `${totalHours}h ${minutes}m`;
 }
 
 module.exports = {
